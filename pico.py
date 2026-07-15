@@ -12,6 +12,8 @@ ledCount = 1280
 ledPin = Pin(22, Pin.OUT)
 pixels = NeoPixel(ledPin, ledCount)
 data = None
+paletteSize = 16 * 3 # 16 colors on 3 bytes
+workPalette = bytearray(paletteSize)
 
 def rotate():
     n = pixels.n
@@ -68,20 +70,68 @@ def openFile(path):
         print(f'Bad height: {data[4]}')
         return False
     return True
+
+def drawSprite(
+    spriteIndex,
+    spriteWidth,
+    spriteHeight,
+    frameWidth,
+    frameHeight,
+    offsetX,
+    offsetY,
+    isHorizontallyMirrored,
+    isVerticallyMirrored,
+):
+    baseY = spriteHeight - frameHeight
+    
+    for index in range(frameWidth * frameHeight):
+        destX = index % frameWidth
+        destY = index // frameWidth
+        srcX = destX - offsetX
+        srcY = destY + baseY - offsetY
+        if isHorizontallyMirrored:
+            srcX = spriteWidth - 1 - srcX
+        if isVerticallyMirrored:
+            srcY = spriteHeight - 1 - srcY
+        paletteIndex = 0
+        if srcX >= 0 and srcX < spriteWidth and srcY >= 0 and srcY < spriteHeight:
+            p = srcY * spriteWidth + srcX
+            byte = data[spriteIndex + p // 2]
+            if p % 2 == 0:
+                paletteIndex = (byte >> 4) & 0xF   # high nibble
+            else:
+                paletteIndex = byte & 0xF          # low nibble
+        
+        ledIndex = imageIndexToFrameIndex(index)
+        
+        base = ledIndex * 3
+        pixels.buf[base]     = workPalette[paletteIndex * 3]
+        pixels.buf[base + 1] = workPalette[paletteIndex * 3 + 1]
+        pixels.buf[base + 2] = workPalette[paletteIndex * 3 + 2]
+    
+    pixels.write()
+
     
 def displayFrame(frameIndex, frameStartIndex, frameSize, paletteStartIndex, paletteSize, spriteStartIndex, spriteSize):
     print(f'Display frame: {frameIndex}')
     frameByteIndex = frameStartIndex + frameIndex * frameSize
-    spriteIndex = data[frameByteIndex]
-    print(f'Sprite index: {spriteIndex}')
-    (offsetX,) = struct.unpack_from('<H', data, spriteIndex + 1)
-    (offsetY,) = struct.unpack_from('<H', data, spriteIndex + 3)
-    paletteIndex = data[spriteIndex + 5]
-    durationMs = data[spriteIndex + 6]
-    brightness = data[spriteIndex + 7]
-    horizontallyMirrored = data[spriteIndex + 8] > 0
-    verticallyMirrored = data[spriteIndex + 8] > 0
-
+    spriteNumber = data[frameByteIndex]
+    print(f'Sprite index: {spriteNumber}')
+    (offsetX,) = struct.unpack_from('<h', data, frameByteIndex + 1)
+    (offsetY,) = struct.unpack_from('<h', data, frameByteIndex + 3)
+    paletteNumber = data[frameByteIndex + 5]
+    durationMs = data[frameByteIndex + 6]
+    brightness = data[frameByteIndex + 7]
+    horizontallyMirrored = data[frameByteIndex + 8] > 0
+    verticallyMirrored = data[frameByteIndex + 9] > 0
+    
+    paletteIndex = paletteStartIndex + paletteNumber * paletteSize
+    for i in range(paletteSize):
+        workPalette[i] = data[paletteIndex + i] * brightness // 255
+        
+    spriteIndex = spriteStartIndex + spriteNumber * spriteSize
+    
+    drawSprite(spriteIndex, spriteWidth, spriteHeight, 32, 40, offsetX, offsetY, horizontallyMirrored, verticallyMirrored)
 
 
 print('Run')
@@ -92,35 +142,33 @@ print(f'File opened: {ready}')
 if ready== False:
     sys.exit()
     
-frameStartIndex = 5
-frameCount = data[frameStartIndex]
+frameCount = data[5]
+print(f'Frame count: {frameCount}')
+
+frameStartIndex = 6
 frameSize = 10  # TODO Move to config
 
 frameByteCount = frameCount * frameSize
 
-spriteWidth = data[frameStartIndex + frameByteCount + 1]
-spriteHeight = data[frameStartIndex + frameByteCount + 2]
+spriteWidth = data[frameStartIndex + frameByteCount]
+spriteHeight = data[frameStartIndex + frameByteCount + 1]
 
 print(f'Sprite size: {spriteWidth}x{spriteHeight}')
 
-paletteCount = data[frameStartIndex + frameByteCount + 3]
-paletteSize = 16 * 3 # 16 colors on 3 bytes
-paletteStartIndex = frameStartIndex + frameByteCount + 4
+paletteCount = data[frameStartIndex + frameByteCount + 2]
+paletteStartIndex = frameStartIndex + frameByteCount + 3
 
 print(f'Palette count: {paletteCount}')
 
 paletteByteCount = paletteCount * paletteSize
 
 spriteCount = data[paletteStartIndex + paletteByteCount]
-spriteSize = 32 * 40 / 2
+spriteSize = spriteWidth * spriteHeight // 2
 spriteStartIndex = paletteStartIndex + paletteByteCount + 1
 
 print(f'Sprite count: {spriteCount}')
 
 displayFrame(0, frameStartIndex, frameSize, paletteStartIndex, paletteSize, spriteStartIndex, spriteSize)
 
-#while True:
-#    chenillard()
-#chenillard()
-#run2()
-
+# while True:
+#     chenillard()
