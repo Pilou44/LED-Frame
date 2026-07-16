@@ -1,5 +1,5 @@
 from machine import Pin
-from time import sleep_ms
+from time import sleep_ms, ticks_us, ticks_diff
 
 from neopixel import NeoPixel
 
@@ -125,10 +125,12 @@ def displayFrame(
     spriteWidth,
     spriteHeight,
 ):
-    print(f'Display frame: {frameIndex}')
+    t0 = ticks_us()
+    
+    #print(f'Display frame: {frameIndex}')
     frameByteIndex = frameStartIndex + frameIndex * frameSize
     spriteNumber = data[frameByteIndex]
-    print(f'Sprite index: {spriteNumber}')
+    #print(f'Sprite index: {spriteNumber}')
     (offsetX,) = struct.unpack_from('<h', data, frameByteIndex + 1)
     (offsetY,) = struct.unpack_from('<h', data, frameByteIndex + 3)
     paletteNumber = data[frameByteIndex + 5]
@@ -144,6 +146,9 @@ def displayFrame(
     spriteIndex = spriteStartIndex + spriteNumber * spriteSize
     
     drawSprite(spriteIndex, spriteWidth, spriteHeight, 32, 40, offsetX, offsetY, horizontallyMirrored, verticallyMirrored)
+    
+    dt = ticks_diff(ticks_us(), t0)
+    print(f'Frame {frameIndex}: {dt} us ({dt / 1000:.1f} ms)')
 
 def playAnimation():
     frameCount = data[5]
