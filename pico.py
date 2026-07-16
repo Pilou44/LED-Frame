@@ -173,7 +173,9 @@ def playAnimation():
     for i in range(frameByteCount):
         displayFrame(i, frameStartIndex, frameSize, paletteStartIndex, paletteSize, spriteStartIndex, spriteSize, spriteWidth, spriteHeight)
 
-    
+def clear():
+    pixels.fill((0, 0, 0))
+    pixels.write()
 
 print('Run')
 
@@ -183,7 +185,12 @@ print(f'File opened: {ready}')
 if ready== False:
     sys.exit()
     
-playAnimation()
+try:
+    playAnimation()
+except KeyboardInterrupt:
+    print("Arrêt demandé")
+finally:
+    clear()
 
 #while True:
 #    chenillard()
