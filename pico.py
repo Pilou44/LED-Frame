@@ -112,7 +112,17 @@ def drawSprite(
     pixels.write()
 
     
-def displayFrame(frameIndex, frameStartIndex, frameSize, paletteStartIndex, paletteSize, spriteStartIndex, spriteSize):
+def displayFrame(
+    frameIndex,
+    frameStartIndex,
+    frameSize,
+    paletteStartIndex,
+    paletteSize,
+    spriteStartIndex,
+    spriteSize,
+    spriteWidth,
+    spriteHeight,
+):
     print(f'Display frame: {frameIndex}')
     frameByteIndex = frameStartIndex + frameIndex * frameSize
     spriteNumber = data[frameByteIndex]
@@ -133,42 +143,47 @@ def displayFrame(frameIndex, frameStartIndex, frameSize, paletteStartIndex, pale
     
     drawSprite(spriteIndex, spriteWidth, spriteHeight, 32, 40, offsetX, offsetY, horizontallyMirrored, verticallyMirrored)
 
+def playAnimation():
+    frameCount = data[5]
+    print(f'Frame count: {frameCount}')
+
+    frameStartIndex = 6
+    frameSize = 10  # TODO Move to config
+
+    frameByteCount = frameCount * frameSize
+
+    spriteWidth = data[frameStartIndex + frameByteCount]
+    spriteHeight = data[frameStartIndex + frameByteCount + 1]
+
+    print(f'Sprite size: {spriteWidth}x{spriteHeight}')
+
+    paletteCount = data[frameStartIndex + frameByteCount + 2]
+    paletteStartIndex = frameStartIndex + frameByteCount + 3
+
+    print(f'Palette count: {paletteCount}')
+
+    paletteByteCount = paletteCount * paletteSize
+
+    spriteCount = data[paletteStartIndex + paletteByteCount]
+    spriteSize = spriteWidth * spriteHeight // 2
+    spriteStartIndex = paletteStartIndex + paletteByteCount + 1
+
+    print(f'Sprite count: {spriteCount}')
+
+    for i in range(frameByteCount):
+        displayFrame(i, frameStartIndex, frameSize, paletteStartIndex, paletteSize, spriteStartIndex, spriteSize, spriteWidth, spriteHeight)
+
+    
 
 print('Run')
 
-ready = openFile('anims/sonic1frame.wl')
+ready = openFile('anims/sonic.wl')
 print(f'File opened: {ready}')
 
 if ready== False:
     sys.exit()
     
-frameCount = data[5]
-print(f'Frame count: {frameCount}')
+playAnimation()
 
-frameStartIndex = 6
-frameSize = 10  # TODO Move to config
-
-frameByteCount = frameCount * frameSize
-
-spriteWidth = data[frameStartIndex + frameByteCount]
-spriteHeight = data[frameStartIndex + frameByteCount + 1]
-
-print(f'Sprite size: {spriteWidth}x{spriteHeight}')
-
-paletteCount = data[frameStartIndex + frameByteCount + 2]
-paletteStartIndex = frameStartIndex + frameByteCount + 3
-
-print(f'Palette count: {paletteCount}')
-
-paletteByteCount = paletteCount * paletteSize
-
-spriteCount = data[paletteStartIndex + paletteByteCount]
-spriteSize = spriteWidth * spriteHeight // 2
-spriteStartIndex = paletteStartIndex + paletteByteCount + 1
-
-print(f'Sprite count: {spriteCount}')
-
-displayFrame(0, frameStartIndex, frameSize, paletteStartIndex, paletteSize, spriteStartIndex, spriteSize)
-
-# while True:
-#     chenillard()
+#while True:
+#    chenillard()
