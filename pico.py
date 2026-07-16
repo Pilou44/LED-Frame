@@ -1,5 +1,5 @@
 from machine import Pin
-from time import sleep_us
+from time import sleep_us, sleep_ms, ticks_us, ticks_ms, ticks_diff, ticks_add
 
 import rp2
 
@@ -227,16 +227,54 @@ def playAnimation():
     spriteStartIndex = paletteStartIndex + paletteByteCount + 1
     print(f'Sprite count: {spriteCount}')
 
-    # Pipeline: render frame N+1 into the back buffer while the DMA streams
-    # frame N out of the front buffer. Period = max(render, transfer).
+    # A frame becomes visible at its present() and stays up until the next
+    # present(), so we space consecutive present() calls by durationMs. We
+    # track an absolute schedule (scheduled += duration) rather than sleeping
+    # a fixed amount per frame, so render/transfer time is absorbed into the
+    # deadline instead of accumulating as drift.
+    #
+    # The schedule is anchored on the FIRST present(), not on loop start: the
+    # first frame isn't visible until it has been rendered (~render ms later),
+    # so anchoring earlier would shorten frame 0 by that startup latency.
+    scheduled = None    # ideal time of the next present; set at first present
+    prevPresent = None  # actual time of the last present, for realized timing
     for i in range(frameCount):  # NOTE: frameCount, not frameByteCount
-        displayFrame(
+        t0 = ticks_us()
+        duration = displayFrame(
             strip.back, i, frameStartIndex, frameSize, paletteStartIndex,
             paletteSize, spriteStartIndex, spriteSize, spriteWidth, spriteHeight,
         )
-        strip.wait()      # let the previous frame finish latching
-        strip.present()   # swap + kick DMA on the frame we just rendered
-        # TODO: pace to durationMs here (subtract the time already elapsed).
+        renderUs = ticks_diff(ticks_us(), t0)
+
+        strip.wait()  # let the previous frame finish latching
+
+        # Hold the previous frame until its duration has elapsed (skip on the
+        # very first frame, which has nothing to wait behind).
+        if scheduled is not None:
+            delay = ticks_diff(scheduled, ticks_ms())
+            if delay > 0:
+                sleep_ms(delay)
+
+        strip.present()  # this frame becomes visible now
+        now = ticks_ms()
+
+        if prevPresent is None:
+            print(f'Frame {i}: render {renderUs / 1000:.1f} ms | '
+                  f'target {duration} ms | (first frame)')
+        else:
+            shown = ticks_diff(now, prevPresent)  # realized hold of prev frame
+            print(f'Frame {i}: render {renderUs / 1000:.1f} ms | '
+                  f'target {duration} ms | prev shown {shown} ms')
+        prevPresent = now
+
+        # Anchor the schedule at the first present, then advance it. If we fell
+        # behind (frame slower than its duration, e.g. duration < 38 ms transfer
+        # floor), resync to now so we don't burst through later frames.
+        if scheduled is None:
+            scheduled = now
+        scheduled = ticks_add(scheduled, duration)
+        if ticks_diff(scheduled, now) < 0:
+            scheduled = now
 
 
 def clear():
