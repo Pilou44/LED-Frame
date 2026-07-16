@@ -8,12 +8,16 @@ from frame import imageIndexToFrameIndex
 import sys
 import struct
 
+from array import array
+
 ledCount = 1280
 ledPin = Pin(22, Pin.OUT)
 pixels = NeoPixel(ledPin, ledCount)
 data = None
 paletteSize = 16 * 3 # 16 colors on 3 bytes
 workPalette = bytearray(paletteSize)
+
+ledIndexLut = array('H', (imageIndexToFrameIndex(i) for i in range(ledCount)))
 
 def rotate():
     n = pixels.n
@@ -71,44 +75,42 @@ def openFile(path):
         return False
     return True
 
+@micropython.native
 def drawSprite(
-    spriteIndex,
-    spriteWidth,
-    spriteHeight,
-    frameWidth,
-    frameHeight,
-    offsetX,
-    offsetY,
-    isHorizontallyMirrored,
-    isVerticallyMirrored,
+    spriteIndex, spriteWidth, spriteHeight,
+    frameWidth, frameHeight, offsetX, offsetY,
+    isHorizontallyMirrored, isVerticallyMirrored,
 ):
+    _data = data                # globales -> locales
+    _palette = workPalette
+    _buf = pixels.buf
+    _lut = ledIndexLut
+
     baseY = spriteHeight - frameHeight
-    
-    for index in range(frameWidth * frameHeight):
-        destX = index % frameWidth
-        destY = index // frameWidth
-        srcX = destX - offsetX
-        srcY = destY + baseY - offsetY
-        if isHorizontallyMirrored:
-            srcX = spriteWidth - 1 - srcX
-        if isVerticallyMirrored:
-            srcY = spriteHeight - 1 - srcY
-        paletteIndex = 0
-        if srcX >= 0 and srcX < spriteWidth and srcY >= 0 and srcY < spriteHeight:
-            p = srcY * spriteWidth + srcX
-            byte = data[spriteIndex + p // 2]
-            if p % 2 == 0:
-                paletteIndex = (byte >> 4) & 0xF   # high nibble
-            else:
-                paletteIndex = byte & 0xF          # low nibble
-        
-        ledIndex = imageIndexToFrameIndex(index)
-        
-        base = ledIndex * 3
-        pixels.buf[base]     = workPalette[paletteIndex * 3]
-        pixels.buf[base + 1] = workPalette[paletteIndex * 3 + 1]
-        pixels.buf[base + 2] = workPalette[paletteIndex * 3 + 2]
-    
+    index = 0
+    for destY in range(frameHeight):
+        srcYRow = destY + baseY - offsetY
+        for destX in range(frameWidth):
+            srcX = destX - offsetX
+            srcY = srcYRow
+            if isHorizontallyMirrored:
+                srcX = spriteWidth - 1 - srcX
+            if isVerticallyMirrored:
+                srcY = spriteHeight - 1 - srcY
+
+            paletteIndex = 0
+            if 0 <= srcX < spriteWidth and 0 <= srcY < spriteHeight:
+                p = srcY * spriteWidth + srcX
+                byte = _data[spriteIndex + (p >> 1)]
+                paletteIndex = (byte >> 4) if (p & 1) == 0 else (byte & 0xF)
+
+            pbase = paletteIndex * 3
+            lbase = _lut[index] * 3
+            _buf[lbase]     = _palette[pbase]
+            _buf[lbase + 1] = _palette[pbase + 1]
+            _buf[lbase + 2] = _palette[pbase + 2]
+            index += 1
+
     pixels.write()
 
     
@@ -170,7 +172,7 @@ def playAnimation():
 
     print(f'Sprite count: {spriteCount}')
 
-    for i in range(frameByteCount):
+    for i in range(frameCount):
         displayFrame(i, frameStartIndex, frameSize, paletteStartIndex, paletteSize, spriteStartIndex, spriteSize, spriteWidth, spriteHeight)
 
 def clear():
