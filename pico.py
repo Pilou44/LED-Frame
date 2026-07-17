@@ -106,7 +106,9 @@ strip = Ws2812Dma(ledPin, ledCount)
 def openFile(path):
     global data
     with open(path, 'rb') as f:
-        data = f.read()
+        # bytearray (not bytes): ptr8(data) in the viper drawSprite needs a
+        # buffer it can take a pointer into; a read-only bytes can be rejected.
+        data = bytearray(f.read())
     print(len(data))
     print(data[0], data[1], data[2], data[3], data[4])
     if data[0] != 87 or data[1] != 76:
@@ -124,23 +126,26 @@ def openFile(path):
     return True
 
 
-@micropython.native
+@micropython.viper
 def drawSprite(
-    dst,
-    spriteIndex,
-    spriteWidth,
-    spriteHeight,
-    frameWidth,
-    frameHeight,
-    offsetX,
-    offsetY,
-    isHorizontallyMirrored,
-    isVerticallyMirrored,
+    dst: ptr8,
+    spriteIndex: int,
+    spriteWidth: int,
+    spriteHeight: int,
+    frameWidth: int,
+    frameHeight: int,
+    offsetX: int,
+    offsetY: int,
+    isHorizontallyMirrored: int,
+    isVerticallyMirrored: int,
 ):
-    _data = data          # globals -> locals for speed
-    _pal = workPalette
-    _lut = ledIndexLut
-    _buf = dst
+    # Cast the globals to native pointers ONCE, up front (each cast costs a
+    # few us, so never do this inside the loop). dst is already a ptr8 (the
+    # bytearray is cast on the way in). No bounds checking happens below --
+    # frameWidth*frameHeight == ledCount by construction, so index stays valid.
+    src = ptr8(data)         # read-only source; we only read from it
+    pal = ptr8(workPalette)
+    lut = ptr16(ledIndexLut)
 
     baseY = spriteHeight - frameHeight
     index = 0
@@ -155,18 +160,24 @@ def drawSprite(
                 srcY = spriteHeight - 1 - srcY
 
             paletteIndex = 0
-            if 0 <= srcX < spriteWidth and 0 <= srcY < spriteHeight:
-                p = srcY * spriteWidth + srcX
-                byte = _data[spriteIndex + (p >> 1)]
-                paletteIndex = (byte >> 4) if (p & 1) == 0 else (byte & 0xF)
+            # Unsigned compare folds ">= 0" and "< size" into a single test:
+            # a negative coordinate wraps to a huge unsigned value >= size.
+            if uint(srcX) < uint(spriteWidth):
+                if uint(srcY) < uint(spriteHeight):
+                    p = srcY * spriteWidth + srcX
+                    byte = src[spriteIndex + (p >> 1)]
+                    if p & 1:
+                        paletteIndex = byte & 0xF        # low nibble
+                    else:
+                        paletteIndex = byte >> 4         # high nibble
 
             pbase = paletteIndex * 3
             # 4 bytes per LED. Colour bytes in natural order; +3 stays 0.
             # DMA bswap turns [c0, c1, c2, 0] into the wire order c0, c1, c2.
-            wbase = _lut[index] << 2
-            _buf[wbase]     = _pal[pbase]
-            _buf[wbase + 1] = _pal[pbase + 1]
-            _buf[wbase + 2] = _pal[pbase + 2]
+            wbase = lut[index] << 2
+            dst[wbase]     = pal[pbase]
+            dst[wbase + 1] = pal[pbase + 1]
+            dst[wbase + 2] = pal[pbase + 2]
             index += 1
 
 
@@ -285,7 +296,7 @@ def clear():
 
 print('Run')
 
-ready = openFile('anims/sonic.wl')
+ready = openFile('anims/sonic10.wl')
 print(f'File opened: {ready}')
 
 if ready == False:
